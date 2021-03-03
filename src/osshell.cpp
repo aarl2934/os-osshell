@@ -5,10 +5,13 @@
 #include <sstream>
 #include <vector>
 #include <unistd.h>
+#include <filesystem>
+#include <sys/wait.h>
 
 void splitString(std::string text, char d, std::vector<std::string>& result);
 void vectorOfStringsToArrayOfCharArrays(std::vector<std::string>& list, char ***result);
 void freeArrayOfCharArrays(char **array, size_t array_length);
+void spawnProcess(const char* path, char** command_list);
 
 int main (int argc, char **argv)
 {
@@ -38,6 +41,47 @@ int main (int argc, char **argv)
     std::vector<std::string> command_list; // to store command user types in, split into its variour parameters
     char **command_list_exec; // command_list converted to an array of character arrays
     // Repeat:
+    
+    while(true){
+        
+    
+        std::cout << "osshell>";
+        std::cin.sync();
+        char command[256];
+        std::cin.getline(command, 256);
+        //std::cout << std::endl;
+        bool found = false;
+        splitString(command, ' ', command_list);
+        vectorOfStringsToArrayOfCharArrays(command_list, &command_list_exec);
+        if(command_list.size() == 0){
+
+        }else if(command_list[0] == "exit"){
+            freeArrayOfCharArrays(command_list_exec, command_list.size());
+            exit(0);
+        }
+        else if(command_list[0] == "history"){
+            //call history function here
+        }else{
+            for(int i = 0; i < os_path_list.size() && !found; i++){
+                for(auto &file : std::filesystem::directory_iterator(os_path_list[i].c_str())){
+                    if(file.path().filename().string() == command_list[0]){
+                        spawnProcess(file.path().string().c_str(), command_list_exec);
+                        found = true; // set the found variable to true so it won't look for more programs.
+                        break;
+                    }
+                    
+                }
+            }
+            
+            if(!found){
+                printf("%s :Error command not found\n", command_list_exec[0]);
+            }
+        }
+        
+
+
+    }
+    
     //  Print prompt for user input: "osshell> " (no newline)
     //  Get user input for next command
     //  If command is `exit` exit loop / quit program
@@ -86,6 +130,22 @@ int main (int argc, char **argv)
 
     return 0;
 }
+
+void spawnProcess(const char* path, char** command_list){
+    int pid = fork();
+    if(pid == 0){
+        execv(path, command_list);
+        //perror(0);
+        exit(0);
+    }else if(pid == -1){
+        std::cout << "ERROR" << std::endl;
+    }else{
+        int status;
+        waitpid(pid, &status, 0);
+    }
+   
+}
+
 
 /*
    text: string to split
