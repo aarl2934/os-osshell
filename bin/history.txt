@@ -1,8 +1,0 @@
-ls
-badexe
-
-
-date
-history
-history 2
-exit
