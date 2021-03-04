@@ -16,28 +16,15 @@ void spawnProcess(const char* path, char** command_list);
 std::vector<std::string> readHistoryFile();
 void readHistoryResults(std::vector<std::string> history, int input);
 void addToHistoryFile(char command[]);
-
+bool searchPath(std::vector<std::string> command_list, std::vector<std::string> os_path_list, char** command_list_exec);
+bool searchCurrent(std::vector<std::string> command_list, char** command_list_exec);
+bool isNum(char* num);
 int main (int argc, char **argv)
 {
     // Get list of paths to binary executables
     std::vector<std::string> os_path_list;
     char* os_path = getenv("PATH");
     splitString(os_path, ':', os_path_list);
-
-    
-    /************************************************************************************
-     *   Example code - remove in actual program                                        *
-     ************************************************************************************/
-    // Shows how to loop over the directories in the PATH environment variable
-    int i;
-    for (i = 0; i < os_path_list.size(); i++)
-    {
-        printf("PATH[%2d]: %s\n", i, os_path_list[i].c_str());
-    }
-    /************************************************************************************
-     *   End example code                                                               *
-     ************************************************************************************/
-
 
     // Welcome message
     printf("Welcome to OSShell! Please enter your commands ('exit' to quit).\n");
@@ -48,21 +35,21 @@ int main (int argc, char **argv)
     
     while(true){
         
-    
-        std::cout << "osshell>";
+        std::cout << "osshell> ";
         std::cin.sync();
         char command[256];
         std::cin.getline(command, 256);
-        //std::cout << std::endl;
+        
         bool found = false;
         splitString(command, ' ', command_list);
         vectorOfStringsToArrayOfCharArrays(command_list, &command_list_exec);
 
-        if(command_list.size() == 0){
-
+        if(command_list.size() == 0){ // no command dont do anything
+            freeArrayOfCharArrays(command_list_exec, command_list.size() + 1);
+            continue;
         }else if(command_list[0] == "exit"){
             addToHistoryFile(command);
-            freeArrayOfCharArrays(command_list_exec, command_list.size());
+            printf("\n");
             exit(0);
         }
         else if(command_list[0] == "history"){
@@ -75,7 +62,11 @@ int main (int argc, char **argv)
 
                 } else { //otherwise the second argument has to be numeric, so we read the file and print the results to however many lines we need.
                     std::vector<std::string> contents = readHistoryFile();
-                    readHistoryResults(contents, std::stoi(command_list[1]));
+                    if(isNum(command_list_exec[1])){
+                        readHistoryResults(contents, std::stoi(command_list[1]));
+                    }else{
+                        printf("Error: history expects an integer > 0 (or 'clear')\n");
+                    }
                 }
             } else { //if no second argument exists print the whole file (by passing -1 to readHistoryResults.)
                 std::vector<std::string> contents = readHistoryFile();
@@ -85,21 +76,17 @@ int main (int argc, char **argv)
             //End of History functionality
 
         }else{
-            for(int i = 0; i < os_path_list.size() && !found; i++){
-                for(auto &file : std::filesystem::directory_iterator(os_path_list[i].c_str())){
-                    if(file.path().filename().string() == command_list[0]){
-                        spawnProcess(file.path().string().c_str(), command_list_exec);
-                        found = true; // set the found variable to true so it won't look for more programs.
-                        break;
-                    }
-                    
-                }
+            if(command_list_exec[0][0] == '.' || command_list_exec[0][0] == '/'){ //if the command starts with . or / use current path
+                found = searchCurrent(command_list, command_list_exec);
+            }else{
+                found = searchPath(command_list, os_path_list, command_list_exec);
             }
             
             if(!found){
                 printf("%s: Error command not found\n", command_list_exec[0]);
             }
         }
+        freeArrayOfCharArrays(command_list_exec, command_list.size() + 1);
         
         addToHistoryFile(command);
 
@@ -114,44 +101,58 @@ int main (int argc, char **argv)
     //   If no, print error statement: "<command_name>: Error command not found" (do include newline)
 
 
-    /************************************************************************************
-     *   Example code - remove in actual program                                        *
-     ************************************************************************************/
-    // Shows how to split a command and prepare for the execv() function
-    std::string example_command = "ls -lh";
-    splitString(example_command, ' ', command_list);
-    vectorOfStringsToArrayOfCharArrays(command_list, &command_list_exec);
-    // use `command_list_exec` in the execv() function rather than looping and printing
-    i = 0;
-    while (command_list_exec[i] != NULL)
-    {
-        printf("CMD[%2d]: %s\n", i, command_list_exec[i]);
-        i++;
-    }
-    // free memory for `command_list_exec`
-    freeArrayOfCharArrays(command_list_exec, command_list.size() + 1);
-    printf("------\n");
-
-    // Second example command - reuse the `command_list` and `command_list_exec` variables
-    example_command = "echo \"Hello world\" I am alive!";
-    splitString(example_command, ' ', command_list);
-    vectorOfStringsToArrayOfCharArrays(command_list, &command_list_exec);
-    // use `command_list_exec` in the execv() function rather than looping and printing
-    i = 0;
-    while (command_list_exec[i] != NULL)
-    {
-        printf("CMD[%2d]: %s\n", i, command_list_exec[i]);
-        i++;
-    }
-    // free memory for `command_list_exec`
-    freeArrayOfCharArrays(command_list_exec, command_list.size() + 1);
-    printf("------\n");
-    /************************************************************************************
-     *   End example code                                                               *
-     ************************************************************************************/
+    
 
 
     return 0;
+}
+
+bool isNum(char* num){
+    int i = 0;
+    while(num[i] != '\0'){
+        if(num[i] < 48 || num[i] > 57){
+            return false;
+        }
+    i++;
+    }
+    return true; 
+}
+
+// start of helper methods for launching processes.
+bool searchCurrent(std::vector<std::string> command_list, char** command_list_exec){
+    if(command_list_exec[0][0] == '/'){
+        for(auto &file : std::filesystem::directory_iterator(std::filesystem::path(command_list_exec[0]).parent_path())){
+            if(file.path().filename().string() == std::filesystem::path(command_list_exec[0]).filename().string()){
+                spawnProcess(file.path().string().c_str(), command_list_exec);
+                return true;
+            }
+        }
+    }else{
+        std::string path = std::filesystem::current_path().string();
+        path.append("/");
+        path.append(command_list[0]);
+        for(auto &file : std::filesystem::directory_iterator(std::filesystem::path(path).parent_path())){
+            if(file.path().filename().string() == std::filesystem::path(path).filename().string()){
+                spawnProcess(file.path().string().c_str(), command_list_exec);
+                return true;
+            }
+        }
+    }
+    return false;
+
+}
+
+bool searchPath(std::vector<std::string> command_list, std::vector<std::string> os_path_list, char** command_list_exec){
+    for(int i = 0; i < os_path_list.size(); i++){
+        for(auto &file : std::filesystem::directory_iterator(os_path_list[i].c_str())){
+            if(file.path().filename().string() == command_list[0]){
+                spawnProcess(file.path().string().c_str(), command_list_exec);
+                
+                return true;
+            }
+        }
+    }
+    return false;
 }
 
 void spawnProcess(const char* path, char** command_list){
@@ -168,7 +169,7 @@ void spawnProcess(const char* path, char** command_list){
     }
    
 }
-
+//end of launching processes.
 
 /*
    text: string to split
@@ -269,7 +270,7 @@ void freeArrayOfCharArrays(char **array, size_t array_length)
 
 void addToHistoryFile(char command[]){
         //record command in history file last 
-        if(command[0] != NULL && strstr(command, "clear") == NULL){
+        if(command[0] != '\0' && strstr(command, "clear") == NULL){
             std::ofstream history;
             history.open("history.txt", std::ofstream::out | std::ofstream::app);
             if(history.is_open()){
