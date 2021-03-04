@@ -1,4 +1,5 @@
 #include <iostream>
+#include <fstream>
 #include <cstdlib>
 #include <string>
 #include <cstring>
@@ -12,6 +13,9 @@ void splitString(std::string text, char d, std::vector<std::string>& result);
 void vectorOfStringsToArrayOfCharArrays(std::vector<std::string>& list, char ***result);
 void freeArrayOfCharArrays(char **array, size_t array_length);
 void spawnProcess(const char* path, char** command_list);
+std::vector<std::string> readHistoryFile();
+void readHistoryResults(std::vector<std::string> history, int input);
+void addToHistoryFile(char command[]);
 
 int main (int argc, char **argv)
 {
@@ -53,14 +57,33 @@ int main (int argc, char **argv)
         bool found = false;
         splitString(command, ' ', command_list);
         vectorOfStringsToArrayOfCharArrays(command_list, &command_list_exec);
+
         if(command_list.size() == 0){
 
         }else if(command_list[0] == "exit"){
+            addToHistoryFile(command);
             freeArrayOfCharArrays(command_list_exec, command_list.size());
             exit(0);
         }
         else if(command_list[0] == "history"){
-            //call history function here
+            
+            if(command_list.size() > 1){ //Check for a second argument.
+                if(command_list[1] == "clear"){ //if the second argument is clear, use ofstream trunc to wipe the history file.
+                    std::ofstream clearfile;
+                    clearfile.open("history.txt", std::ofstream::out | std::ofstream::trunc);
+                    clearfile.close();
+
+                } else { //otherwise the second argument has to be numeric, so we read the file and print the results to however many lines we need.
+                    std::vector<std::string> contents = readHistoryFile();
+                    readHistoryResults(contents, std::stoi(command_list[1]));
+                }
+            } else { //if no second argument exists print the whole file (by passing -1 to readHistoryResults.)
+                std::vector<std::string> contents = readHistoryFile();
+                readHistoryResults(contents, -1);
+            }
+
+            //End of History functionality
+
         }else{
             for(int i = 0; i < os_path_list.size() && !found; i++){
                 for(auto &file : std::filesystem::directory_iterator(os_path_list[i].c_str())){
@@ -74,11 +97,11 @@ int main (int argc, char **argv)
             }
             
             if(!found){
-                printf("%s :Error command not found\n", command_list_exec[0]);
+                printf("%s: Error command not found\n", command_list_exec[0]);
             }
         }
         
-
+        addToHistoryFile(command);
 
     }
     
@@ -240,4 +263,52 @@ void freeArrayOfCharArrays(char **array, size_t array_length)
         }
     }
     delete[] array;
+}
+
+//Start of History helper methods (Jonas' stuff)
+
+void addToHistoryFile(char command[]){
+        //record command in history file last 
+        if(command[0] != NULL && strstr(command, "clear") == NULL){
+            std::ofstream history;
+            history.open("history.txt", std::ofstream::out | std::ofstream::app);
+            if(history.is_open()){
+                history << command << std::endl;
+            }
+            history.close();
+        }
+}
+
+std::vector<std::string> readHistoryFile(){ //Always returns a vector with a full copy of the history file.
+    std::ifstream hs ("history.txt");
+    std::vector<std::string> historyfileContents;
+
+    if(hs.is_open()){
+        std::string line;
+        while(std::getline(hs, line)){
+            historyfileContents.insert(historyfileContents.end(), line); //read lines in reverse for proper ordering
+        }
+    }
+
+    hs.close();
+
+    return historyfileContents;
+}
+
+/* 
+    Helper method for history. Takes the full file and a numeric input for how many lines to read.
+    If input = -1, it reads the entire file. 
+*/
+void readHistoryResults(std::vector<std::string> history, int input){
+    if(input == -1){
+        int j = 1;
+        for(auto i = history.begin(); i != history.end(); ++i){
+            std::cout << "  " << j << ": " << *i << '\n';
+            j++;
+        }
+    } else {
+        for(int i = history.size() - (input); i < history.size(); i++){
+            std::cout << "  " << i + 1 << ": " << history.at(i) << '\n';
+        }
+    }  
 }
